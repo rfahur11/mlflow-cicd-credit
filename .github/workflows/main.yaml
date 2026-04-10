@@ -44,14 +44,31 @@ jobs:
       # Get latest run_id
       - name: Get latest MLflow run_id
         run: |
-          RUN_PATH=$(find mlruns/0 -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '.*/[0-9a-fA-F-]{36}$' -printf '%T@ %p\n' | sort -n | tail -n 1 | awk '{print $2}')
-          if [ -z "$RUN_PATH" ]; then
-            echo "No valid MLflow run directory found under mlruns/0"
-            exit 1
-          fi
-          RUN_ID=$(basename "$RUN_PATH")
-          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
-          echo "Latest run_id: $RUN_ID"
+          python - <<'PY'
+          import os
+          import sys
+          from mlflow.tracking import MlflowClient
+
+          client = MlflowClient()
+          exp = client.get_experiment_by_name("Default")
+          if exp is None:
+            print("Default experiment not found")
+            sys.exit(1)
+
+          runs = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            order_by=["attributes.start_time DESC"],
+            max_results=1,
+          )
+          if not runs:
+            print("No MLflow runs found in Default experiment")
+            sys.exit(1)
+
+          run_id = runs[0].info.run_id
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+            f.write(f"RUN_ID={run_id}\n")
+          print(f"Latest run_id: {run_id}")
+          PY
 
       # Build Docker Model
       - name: Build Docker Model
